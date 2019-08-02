@@ -72,6 +72,7 @@ createConfigUpdate() {
   ORIGINAL=$2
   MODIFIED=$3
   OUTPUT=$4
+  echo "In createConfigUpdate got channel name as ${CHANNEL}"
 
   set -x
   configtxlator proto_encode --input "${ORIGINAL}" --type common.Config >original_config.pb
@@ -83,6 +84,28 @@ createConfigUpdate() {
   set +x
 }
 
+# signConfigtxAsPeerOrg <org> <configtx.pb>
+# Set the peerOrg admin of an org and signing the config update
+signConfigtxAsPeerOrg() {
+  ORG=$1
+  PEERORG=$2
+  TX=$3
+  # ----- CHANGE PORT NUMBER OF MAINTAINER ORG HERE 
+  CORE_PEER_LOCALMSPID="${MAINTAINER_ORG}MSP"
+  CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/${MAINTAINER_ORG}.example.com/peers/${MAINTAINER_ORG_PEER}.${MAINTAINER_ORG}.example.com/tls/ca.crt
+  CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/${MAINTAINER_ORG}.example.com/users/Admin@${MAINTAINER_ORG}.example.com/msp
+  CORE_PEER_ADDRESS=${MAINTAINER_ORG_PEER}.${MAINTAINER_ORG}.example.com:7051
+
+  set -x
+  peer channel signconfigtx -f "${TX}"
+  set +x
+}
+selectSecond(){
+    CORE_PEER_LOCALMSPID="Org2MSP"
+    CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt
+    CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.example.com/users/Admin@org2.example.com/msp
+    CORE_PEER_ADDRESS=peer0.org2.example.com:9051
+}
 
 echo
 echo "========= Creating config transaction to add org3 to network =========== "
@@ -91,15 +114,15 @@ echo
 echo "Installing jq"
 apt-get -y update && apt-get -y install jq
 
-# UNCOMMENT THE YQ PART WHEN USER IS ABLE TO PROVIDE OWN CONFIGTX FILE PARAMETERS
 
 # yq is a command line yaml/xml processor
-# UNCOMMENT echo "Installing yq"
+echo "Installing yq"
 # This will only work if your Linux Distribution supports snap packages
-# UNCOMMENT snap install yq
+# snap install yq
 
-# This is to install yq using apt packages.I don't know whether this is safe to use or not.
+# This is to install yq using apt packages.
 # Uncomment the following lines
+
 # sudo add-apt-repository ppa:rmescandon/yq
 # sudo apt update
 # sudo apt install yq -y
@@ -111,24 +134,32 @@ fetchChannelConfig ${CHANNEL_NAME} config.json
 set -x
 #----------CODE MIGHT GO WRONG HERE------------
 MSP_NAME="${ORG_NAME}MSP"
-jq -s --arg MSP_NAME "${ORG_NAME}MSP" '.[0] * {"channel_group":{"groups":{"Application":{"groups": {"$MSP_NAME":.[1]}}}}}' config.json ./channel-artifacts/orgnew.json > modified_config.json
+jq -s '.[0] * {"channel_group":{"groups":{"Application":{"groups": {"Org3MSP":.[1]}}}}}' config.json ./channel-artifacts/orgnew.json > modified_config.json
+sed $OPTS "s/Org3MSP/${MSP_NAME}/g" modified_config.json
+
 set +x
 
-# Compute a config update, based on the differences between config.json and modified_config.json, write it as a transaction to org3_update_in_envelope.pb
+# Compute a config update, based on the differences between config.json and modified_config.json, write it as a transaction to new_org_update_in_envelope.pb
 createConfigUpdate ${CHANNEL_NAME} config.json modified_config.json new_org_update_in_envelope.pb
+
+
+echo
+echo "========= Config transaction to add org3 to network created ===== "
+echo
+
+echo "Signing config transaction"
+echo
+signConfigtxAsPeerOrg $MAINTAINER_ORG $MAINTAINER_ORG_PEER new_org_update_in_envelope.pb
 
 echo
 echo "========= Submitting transaction from a different peer (peer0.org2) which also signs it ========= "
 echo
 
-CORE_PEER_LOCALMSPID="${MAINTAINER_ORG}MSP"
-CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/${MAINTAINER_ORG}.example.com/peers/${MAINTAINER_ORG_PEER}.${MAINTAINER_ORG}.example.com/tls/ca.crt
-CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/${MAINTAINER_ORG}.example.com/users/Admin@${MAINTAINER_ORG}.example.com/msp
-CORE_PEER_ADDRESS=${MAINTAINER_ORG_PEER}.${MAINTAINER_ORG}.example.com:7051
- 
+selectSecond
+
+peer channel update -f "${TX}" -c ${CHANNEL_NAME} -o orderer.example.com:7050 --tls --cafile $ORDERER_CA
 set -x
 # Orderer Name to Be changed here
-peer channel update -f new_org_update_in_envelope.pb -c ${CHANNEL_NAME} -o orderer.example.com:7050 --tls --cafile ${ORDERER_CA}
 set +x
 
 echo

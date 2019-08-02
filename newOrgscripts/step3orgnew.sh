@@ -8,12 +8,12 @@
 # This script is designed to be run in the cli container as the third
 # step of the EYFN tutorial. It installs the chaincode as version 2.0
 # on peer0.org1 and peer0.org2, and uprage the chaincode on the
-# channel to version 2.0, thus completing the addition of org3 to the
+# channel to version 2.0, thus completing the addition of new Organization to the
 # network previously setup in the BYFN tutorial.
 #
 
 echo
-echo "========= Finish adding Org3 to your first network ========= "
+echo "========= Finish adding New Organization to your first network ========= "
 echo
 CHANNEL_NAME="$1"
 DELAY="$2"
@@ -35,7 +35,7 @@ if [ "$LANGUAGE" = "node" ]; then
 fi
 
 # import utils
-. newOrgscripts/utils.sh
+. scripts/utils.sh
 
 echo "===================== Installing chaincode 2.0 on peer0.org1 ===================== "
 installChaincode 0 1 2.0
@@ -46,7 +46,7 @@ echo "===================== Upgrading chaincode on peer0.org1 ==================
 upgradeChaincode 0 1
 
 echo
-echo "========= Finished adding Org3 to your first network! ========= "
+echo "========= Finished adding New Organization to your first network! ========= "
 echo
 
 exit 0

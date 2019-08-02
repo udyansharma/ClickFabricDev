@@ -20,11 +20,10 @@ export VERBOSE=false
 # Print the usage message
 function printHelp () {
   echo "Usage: "
-  echo "  add.sh up|generate [-o <orgname>] [-c <channel name>] [-t <timeout>] [-d <delay>] [-f <docker-compose-file>] [-s <dbtype>] [-l <language>] [-i <imagetag>] [-a <adminorg>] [-p <adminpeer>] [-v <verbose>]"
+  echo "  add.sh up [-o <orgname>] [-c <channel name>] [-t <timeout>] [-d <delay>] [-f <docker-compose-file>] [-s <dbtype>] [-l <language>] [-i <imagetag>] [-a <adminorg>] [-p <adminpeer>] [-v <verbose>]"
   echo "  add.sh -h|--help (print this message)"
-  echo "    <mode> - one of 'up', 'down', 'restart' or 'generate'"
+  echo "    <mode> - 'up'"
   echo "      - 'up' - bring up the network with docker-compose up"
-  echo "      - 'generate' - generate required certificates and genesis block"
   echo "    -o <orgname> - name of the organization to be added [this is a required field]"
   echo "    -c <channel name> - channel name to use (defaults to \"mychannel\")"
   echo "    -t <timeout> - CLI timeout duration in seconds (defaults to 10)"
@@ -37,10 +36,6 @@ function printHelp () {
   echo "    -p <adminpeer> - the peer of the network admin organization (defaults to \"peer0\")"
   echo "    -v <verbose> - verbose mode"
   echo
-  echo "Typically, one would first generate the required certificates and "
-  echo "genesis block, then bring up the network. e.g.:"
-  echo
-  echo "	add.sh generate -c mychannel -a org2 -p peer1"
   echo "	add.sh up -c mychannel -s couchdb"
   echo "	add.sh up -l node"
   echo
@@ -51,16 +46,13 @@ function printHelp () {
 
 # Generate the needed certificates, the genesis block and start the network.
 function networkUp () {
-  # generate artifacts if they don't exist
-  if [ ! -d "${ORG_NAME}-artifacts/crypto-config" ]; then
-    generateCerts
-    generateChannelArtifacts
-    createConfigTx
-  fi
+  generateCerts
+  generateChannelArtifacts
+  createConfigTx
 
   CURRENT_DIR=$PWD
   cd "$CURRENT_DIR"
-  cp docker-compose-template.yaml docker-compose-${ORG_NAME}.yaml
+  cp docker-compose-template-new-org.yaml docker-compose-${ORG_NAME}.yaml
   sed $OPTS "s/Org3/${ORG_NAME}/g" docker-compose-${ORG_NAME}.yaml
 
   # If MacOSX, remove the temporary backup of the docker-compose file
@@ -75,14 +67,14 @@ function networkUp () {
       IMAGE_TAG=$IMAGETAG docker-compose -f docker-compose-$ORG_NAME.yaml up -d 2>&1
   fi
   if [ $? -ne 0 ]; then
-    echo "ERROR !!!! Unable to start New Organization network i.e. related conatiners"
+    echo "ERROR !!!! Unable to start New Organization network i.e. related containers"
     exit 1
   fi
   echo
   echo "###############################################################"
   echo "############### New Organization's peers joining the network ##################"
   echo "###############################################################"
-  docker exec ${ORG_NAME}cli ./newOrgscripts/step2orgnew.sh $CHANNEL_NAME $CLI_DELAY $LANGUAGE $CLI_TIMEOUT $VERBOSE ${ORG_NAME}
+  docker exec ${ORG_NAME}cli newOrgscripts/step2orgnew.sh $CHANNEL_NAME $CLI_DELAY $LANGUAGE $CLI_TIMEOUT $VERBOSE ${ORG_NAME}
   if [ $? -ne 0 ]; then
     echo "ERROR !!!! New Organization peers coudn't join the network"
     exit 1
@@ -93,8 +85,9 @@ function networkUp () {
   echo "###############################################################"
 
   cp newOrgscripts/step3orgnew.sh scripts/step3orgnew.sh
+  cp newOrgscripts/utils.sh scripts/newutils.sh 
   
-  docker exec cli /scripts/step3orgnew.sh $CHANNEL_NAME $CLI_DELAY $LANGUAGE $CLI_TIMEOUT $VERBOSE
+  docker exec cli scripts/step3orgnew.sh $CHANNEL_NAME $CLI_DELAY $LANGUAGE $CLI_TIMEOUT $VERBOSE
   if [ $? -ne 0 ]; then
     echo "ERROR !!!! Unable to add New Organization peers on network. Could not upgrade Chaincode"
     exit 1
@@ -178,7 +171,7 @@ function generateChannelArtifacts() {
 function createNewConfigFiles() {
   CURRENT_DIR=$PWD
   DIR_NAME=${ORG_NAME}-artifacts
-  
+
   # Making artifacts directory 
   mkdir -p -- "$DIR_NAME"
 
@@ -196,6 +189,8 @@ function createNewConfigFiles() {
   sed $OPTS "s/Org3/${ORG_NAME}/g" configtx.yaml
 
   sed $OPTS "s/Org3/${ORG_NAME}/g" crypto-config.yaml
+  sed $OPTS "s/NUMOFPEERS/${NUM_OF_PEERS}/g" crypto-config.yaml
+
 
 
   # If MacOSX, remove the temporary backup of the configtx and crypto-config file
@@ -232,7 +227,7 @@ COMPOSE_FILE=docker-compose-cli.yaml
 #
 COMPOSE_FILE_COUCH=docker-compose-couch.yaml
 # use this as the default docker-compose yaml definition
-COMPOSE_FILE_NEW_ORG=docker-compose-template.yaml
+COMPOSE_FILE_NEW_ORG=docker-compose-template-new-org.yaml
 #
 COMPOSE_FILE_COUCH_NEW_ORG=docker-compose-couch-new-org.yaml
 # kafka and zookeeper compose file
@@ -242,11 +237,13 @@ LANGUAGE=golang
 # default image tag
 IMAGETAG="latest"
 #default network admin org
-MAINTAINER_ORG="org1"
+#MAINTAINER_ORG="org1"
 #default network admin org peer
 MAINTAINER_ORG_PEER="peer0"
 #default value
-ORG_NAME=ORGNEW
+ORG_NAME="ORGNEW"
+# default number of peers to be added
+NUM_OF_PEERS=2
 
 # sed on MacOSX does not support -i flag with a null extension. We will use
 # 't' for our back-up's extension and delete it at the end of the function
@@ -257,21 +254,7 @@ else
   OPTS="-i"
 fi
 
-# # Parse commandline args
-# if [ "$1" = "-m" ];then	# supports old usage, muscle memory is powerful!
-#     shift
-# fi
-# MODE=$1;shift
-# # Determine whether starting, stopping, restarting or generating for announce
-# if [ "$MODE" == "new" ]; then
-#   EXPMODE="Adding New Organization to the Network"
-# elif [ "$MODE" == "generate" ]; then
-#   EXPMODE="Generating certs and genesis block for "
-# else
-#   printHelp
-#   exit 1
-# fi
-while getopts "h?o:c:t:d:f:s:l:i:a:p:v" opt; do
+while getopts "h?o:c:t:d:f:s:l:i:a:p:n:v" opt; do
   case "$opt" in
     h|\?)
       printHelp
@@ -297,6 +280,8 @@ while getopts "h?o:c:t:d:f:s:l:i:a:p:v" opt; do
     ;;
     o)  ORG_NAME=$OPTARG; 
     ;;
+    n)  NUM_OF_PEERS=$OPTARG; 
+    ;;
     v)  VERBOSE=true; 
     ;;
     esac
@@ -311,13 +296,15 @@ done
   else
         echo "Beginning to add New Organization to the Network with channel '${CHANNEL_NAME}' and CLI timeout of '${CLI_TIMEOUT}' seconds and CLI delay of '${CLI_DELAY}' seconds"
   fi
-if [ ! "${ORG_NAME}" ]; then
-            echo $ORG_NAME
-            echo "Network admin organization not provided. Exiting....."
+if [ ! "${MAINTAINER_ORG}" ]; then
+            echo $MAINTAINER_ORG
+            echo "Network admin organization not provided. Kindly provide it as an argument using the -a flag. Use -h for help."
+            echo "Exiting....."
             exit 1
 fi
 
+echo "REQUESTED NUM_OF_PEERS IS ${NUM_OF_PEERS}"
 createNewConfigFiles
-#Create the network using docker compose
+# Create the network using docker compose
 networkUp
 

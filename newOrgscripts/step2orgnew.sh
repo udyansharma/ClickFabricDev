@@ -37,21 +37,23 @@ fi
 # import utils
 . newOrgscripts/utils.sh
 
+ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+
 echo "Fetching channel config block from orderer..."
 set -x
-# Orderer Name to Be changed here
+# ----- Orderer Name to Be changed here
 peer channel fetch 0 $CHANNEL_NAME.block -o orderer.example.com:7050 -c $CHANNEL_NAME --tls --cafile $ORDERER_CA >&log.txt
 res=$?
 set +x
 cat log.txt
 verifyResult $res "Fetching config block from orderer has Failed"
 
-joinChannelWithRetry 0 ${ORG_NAME}
-echo "===================== peer0.newOrg joined channel '$CHANNEL_NAME' ===================== "
-joinChannelWithRetry 1 ${ORG_NAME}
-echo "===================== peer1.newOrg joined channel '$CHANNEL_NAME' ===================== "
-echo "Installing chaincode 2.0 on peer0.neworg..."
-installChaincode 0 ${ORG_NAME} 2.0
+joinChannelWithRetry peer0 ${ORG_NAME}
+echo "===================== peer0.${ORG_NAME} joined channel '$CHANNEL_NAME' ===================== "
+joinChannelWithRetry peer1 ${ORG_NAME}
+echo "===================== peer1.${ORG_NAME} joined channel '$CHANNEL_NAME' ===================== "
+echo "Installing chaincode 2.0 on peer0.${ORG_NAME}..."
+installChaincode peer0 ${ORG_NAME} 2.0
 
 echo
 echo "========= newOrg is now halfway onto your first network ========= "
